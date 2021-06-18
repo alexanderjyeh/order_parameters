@@ -8,7 +8,7 @@ Created on Thu Oct 29 11:26:56 2020
 
 import numpy as np
 from scipy.spatial.distance import squareform, pdist
-import glob, os
+
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.patches import Circle
@@ -95,38 +95,42 @@ def global_c6(frame):
     local 6-fold connectivity order. Also returns necessary prerequisite 
     values: psi6, chi6, and c6 for each particle."""
     psi6s, c6s = local_c6(frame)
-    return c6s.mean()
+    return c6s.mean()/c6_hex(frame.shape[0])
 
 def global_c6_from_local(l_c6):
     """Outputs average c6 given a (N x 1) array corresponding to local c6."""
     ave = l_c6.mean()
-    return ave/6
+    return ave/l_c6.shape[0]
 
 def shells(pnum):
-    """from particle number, calculate shells"""
+    """from particle number, calculate number of shells assuming hexagonal crystal"""
+    # equation 8 from SI of https://doi.org/10.1039/C2LC40692F
     return -1/2 + np.sqrt((pnum-1)/3 + 1/4)
 
 def c6_hex(pnum):
     """returns C6 for a hexagonal cluster of the same size"""
+    # equation 10 from SI of https://doi.org/10.1039/C2LC40692F
     s = shells(pnum)
     return 6*(3*s**2 + s)/pnum
 
 if __name__=="__main__":
-    raw = np.genfromtxt("37_hex_crystal.txt")*2 #bring particle radius to 1
-    coords = raw[:,1:3]  #stripping particle number and z coord
+    #%% analyzing a perfect crystal with hexagonal morphology
+    raw = np.genfromtxt("37_hex_crystal.txt")*2 # bring particle radius to 1
+    coords = raw[:,1:3]  # stripping particle number and z coord
+    pnum = coords.shape[0] # get total number of particles
     
-    pnum = 37
+    # as every particle is in a perfect crystal, we can calculate C6 my hand
     g_c6 = (3*6                 # six corners are 3 coordinated
             + 4*(2*6)           # 2 particles per edge are 4 coordinated
             + 6*(2*(3+4) + 5))  # the interior is 6 coordinated
     g_c6 = g_c6/37
     
+    # print the hand calculated values
+    ideal = c6_hex(pnum)    
     print(f"hand calc'd: {g_c6:0.5f}")
-    s = shells(pnum)
-    print(f"shells: {s}")
-    ideal = c6_hex(pnum)
     print(f"ideal: {ideal:0.5f}")
     
+    # print the computed values
     psi6s, c6s = local_c6(coords)
     calc_g_c6 = global_c6(coords)
     calc_g_psi6 = global_psi6_from_local(psi6s)
@@ -137,6 +141,7 @@ if __name__=="__main__":
     fig = plt.figure()
     fig.set_size_inches(7, 5.25)
     ax = fig.add_subplot(111)
+    ax.set_title("$<C_{6,i}>$ for each particle in a hexagonal crystal")
     sc = ax.scatter(coords[...,0], coords[...,1], c=c6s, cmap=cmap)
     cbar = fig.colorbar(sc, ax=ax)
     ax.set_aspect("equal")
@@ -144,6 +149,7 @@ if __name__=="__main__":
     fig = plt.figure()
     fig.set_size_inches(7, 5.25)
     ax = fig.add_subplot(111)
+    ax.set_title("$<\Psi_{6,i}>$ for each particle in a hexagonal crystal")
     qu = ax.quiver(coords[...,0], coords[...,1],
                    psi6s[...,0], psi6s[...,1])
     ax.set_aspect("equal")
@@ -162,6 +168,7 @@ if __name__=="__main__":
     fig = plt.figure()
     fig.set_size_inches(7, 5.25)
     ax = fig.add_subplot(111)
+    ax.set_title("$<C_{6,i}>$ for each particle in a disordered fluid")
     sc = ax.scatter(coords[...,0], coords[...,1], c=c6s, cmap=cmap)
     cbar = fig.colorbar(sc, ax=ax)
     ax.set_aspect("equal")
@@ -180,6 +187,7 @@ if __name__=="__main__":
     fig = plt.figure()
     fig.set_size_inches(7, 5.25)
     ax = fig.add_subplot(111)
+    ax.set_title("$<C_{6,i}>$ for each particle in a bicrystal")
     sc = ax.scatter(coords[...,0], coords[...,1], c=c6s, cmap=cmap)
     cbar = fig.colorbar(sc, ax=ax)
     ax.set_aspect("equal")
@@ -188,6 +196,7 @@ if __name__=="__main__":
     fig = plt.figure()
     fig.set_size_inches(7, 5.25)
     ax = fig.add_subplot(111)
+    ax.set_title("Particles in a bicrystal colored by phase of $<\Psi_{6,i}>$")
     sc = ax.scatter(coords[...,0], coords[...,1],
                     c=(np.angle(psi6s)*180/np.pi), cmap=cmap)
     cbar = fig.colorbar(sc, ax=ax)
@@ -196,46 +205,7 @@ if __name__=="__main__":
     fig = plt.figure()
     fig.set_size_inches(7, 5.25)
     ax = fig.add_subplot(111)
+    ax.set_title("$<\Psi_{6,i}>$ for each particle in a bicrystal")
     qu = ax.quiver(coords[...,0], coords[...,1],
                    psi6s.real, psi6s.imag)
     ax.set_aspect("equal")
-    
-    #%% troubleshooting for Rachel
-
-#    rachel_version = "bicrystal_for_rachel.txt"
-#    with open(rachel_version, 'w') as output:        
-#        #print number of particles in frame
-#        print("hi")
-#        for j, part in enumerate(coords):
-#            output.write("1\t{}\t{:.8f}\t{:.8f}\t0.01\t-1\t0\n".format(
-#                         j+1,
-#                         *part))
-    conj_psi6s = np.conjugate(psi6s)
-    pairs = squareform(pdist(coords))
-    coordination_shell=2.64
-    neighbors = []
-    for p in range(pnum):
-        n_idx = np.nonzero((pairs[p]<coordination_shell) & (pairs[p]!=0))[0]
-        neighbors.append(n_idx)
-        
-        products = psi6s[p]*conj_psi6s[n_idx]
-        numer = np.abs(np.real(products))
-        denom = np.abs(products)
-        chi6s = numer/denom
-        #following S20 in supp info of https://doi.org/10.1039/C3SM50809A
-        mask = chi6s>=0.32 #criterion
-        detailed = ", ".join([f"{n}:{chi:0.3f}" for n, chi in zip(n_idx, chi6s)])
-        print(f"{p}: ({n_idx.size} near, {sum(mask)} crystal) [" + detailed + "]")
-    
-    fig = plt.figure()
-    fig.set_size_inches(7, 5.25)
-    ax = fig.add_subplot(111)
-    sc = ax.scatter(coords[...,0], coords[...,1])
-    coll = []
-    for p in range(coords.shape[0]):
-        coll.append(Circle(coords[p], 2.64,
-                    fill=False, edgecolor='k', alpha=0.4))
-    p = PatchCollection(coll, match_original=True)
-    ax.add_collection(p)
-    ax.set_aspect("equal")
-
